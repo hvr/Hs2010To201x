@@ -16,9 +16,14 @@ cabal-version:       >=1.10
 executable Hs2010To201x
   main-is:             Main.hs
   -- other-modules:       
-  build-depends:       base >=4.8 && <4.9
+  build-depends:
+      -- GHC 7.10.2 ships with base 4.8.1.0
+      base        >= 4.8.1.0  && < 4.9
+    , HaRe >= 0.8
   hs-source-dirs:      src
   default-language:    Haskell2010
+  if impl (ghc < 7.10.2)
+    buildable: False
 
 test-suite spec
   type:
