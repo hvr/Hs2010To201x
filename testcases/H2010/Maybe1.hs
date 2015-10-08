@@ -5,8 +5,9 @@ module Maybe1 where
 data Maybe' a = Nothing' | Just' a
 
 instance  Functor Maybe'  where
-    fmap _ Nothing'       = Nothing'
-    fmap f (Just' a)      = Just' (f a)
+    fmap f m    = m >>= pure . f
+    -- fmap _ Nothing'       = Nothing'
+    -- fmap f (Just' a)      = Just' (f a)
 
 instance Applicative Maybe' where
     pure = Just'
