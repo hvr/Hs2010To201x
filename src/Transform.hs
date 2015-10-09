@@ -2,63 +2,71 @@
 module Transform (mrp) where
 
 import qualified Data.Generics         as SYB
--- import qualified GHC.SYB.Utils         as SYB
 
--- import qualified BasicTypes    as GHC
+import qualified FastString    as GHC
 import qualified GHC           as GHC
+import qualified RdrName       as GHC
 
-import qualified Language.Haskell.GhcMod as GM (Options(..))
-import Language.Haskell.Refact.API
-
--- To be moved into HaRe API
 import Language.Haskell.GHC.ExactPrint
+-- import Language.Haskell.GHC.ExactPrint.Parsers
 import Language.Haskell.GHC.ExactPrint.Types
--- import Language.Haskell.GHC.ExactPrint.Utils
+import Language.Haskell.GHC.ExactPrint.Utils
 
 import Control.Monad
+import Data.List
 import Data.Maybe
 import System.Directory
+import System.FilePath.Posix
+
 import qualified Data.Map as Map
 -- import Debug.Trace
 -- import Control.Exception
 
 -- ---------------------------------------------------------------------
 
-mrp :: RefactSettings -> GM.Options -> FilePath ->IO [FilePath]
-mrp settings opts fileName = do
+mrp :: FilePath ->IO [FilePath]
+mrp fileName = do
   absFileName <- canonicalizePath fileName
-  runRefacSession settings opts (doRefact absFileName)
+  comp fileName
 
-doRefact :: FilePath -> RefactGhc [ApplyRefacResult]
-doRefact absFileName = do
-  (r,_) <- applyRefac (comp absFileName ) (RSFile absFileName)
-  return [r]
-
-comp :: FilePath -> RefactGhc ()
+comp :: FilePath -> IO [FilePath]
 comp fileName = do
-       parseSourceFileGhc fileName
-       parsed <- getRefactParsed
-       logDataWithAnns "Transform.comp:parsed="  parsed -- ++AZ++
-       let insts = getOneParamInstances parsed
-       logm $ "Transform.com:instances:" ++ showGhc insts
-       let
-         isInstance name ((s,_),_) = showGhc s == name
-         byParamMap is = Map.fromList $ map (\v@((_,k),_) -> (showGhc k,v)) is
-         applicatives = byParamMap $ filter (isInstance "Applicative") insts
-         monads       = filter (isInstance "Monad") insts
-       -- logm $ "Transform.com:Applicative instances:" ++ showGhc applicatives
-       -- logm $ "Transform.com:Monad instances:" ++ showGhc monads
+  pr <- parseModule fileName
+  case pr of
+    Left (ss,errStr) -> error $ "parse failed for " ++ fileName ++ ":" ++ errStr
+    Right (anns,parsed) -> do
+      let insts = getOneParamInstances parsed
+      putStrLn $ "Transform.com:instances:" ++ showGhc insts
+      let
+        isInstance name ((s,_),_) = showGhc s == name
+        byParamMap is = Map.fromList $ map (\v@((_,k),_) -> (showGhc k,v)) is
+        applicatives = byParamMap $ filter (isInstance "Applicative") insts
+        monads       = filter (isInstance "Monad") insts
+      -- logm $ "Transform.com:Applicative instances:" ++ showGhc applicatives
+      -- logm $ "Transform.com:Monad instances:" ++ showGhc monads
 
-       void $ forM monads $ \((s,p),i) -> do
-         case Map.lookup (showGhc p) applicatives of
-           Nothing -> do
-             error $ "Need to create an Applicative instance for:" ++ showGhc (s, p)
-           Just (_,a) -> do
-             logm $ "Found matching applicative:" ++ showGhc a
-             moveReturn i a
-         return ()
+      void $ forM monads $ \((s,p),i) -> do
+        case Map.lookup (showGhc p) applicatives of
+          Nothing -> do
+            error $ "Need to create an Applicative instance for:" ++ showGhc (s, p)
+          Just (_,a) -> do
+            putStrLn $ "Found matching applicative:" ++ showGhc a
+            -- moveReturn i a
+            let (lp',(ans',_),_w) = runTransform anns (moveReturn parsed i a)
+            putStrLn $ "log:\n" ++ intercalate "\n" _w
+            writeResults lp' ans' fileName
+            return ()
+        return []
 
-       return ()
+      return [fileName]
+
+-- ---------------------------------------------------------------------
+
+writeResults :: GHC.ParsedSource -> Anns -> FilePath -> IO ()
+writeResults parsed ann fileName = do
+  let source = exactPrint parsed ann
+  let (baseFileName,ext) = splitExtension fileName
+  writeFile (baseFileName ++ ".refactored" ++ ext) source
 
 -- ---------------------------------------------------------------------
 
@@ -87,16 +95,17 @@ pureRdrName = mkRdrName "pure"
 
 -- |Move the implementation of the 'return' function from the monad instance to
 -- the 'pure' function in the applicative
-moveReturn :: GHC.ClsInstDecl GHC.RdrName -> GHC.ClsInstDecl GHC.RdrName -> RefactGhc ()
-moveReturn monad applicative = do
-  logm $ "moveReturn:moving (from,to):" ++ showGhc (monad,applicative)
+moveReturn :: GHC.ParsedSource
+           -> GHC.ClsInstDecl GHC.RdrName -> GHC.ClsInstDecl GHC.RdrName
+           -> Transform GHC.ParsedSource
+moveReturn parsed monad applicative = do
+  logTr $ "moveReturn:moving (from,to):" ++ showGhc (monad,applicative)
   let returnFb = fromJust $ findFunBind returnRdrName monad
       pureFb   = fromJust $ findFunBind pureRdrName   applicative
-  logm $ "moveReturn:moving (returnFb,pureFb):" ++ showGhc (returnFb,pureFb)
-  replaceMatchGroup pureFb (GHC.fun_matches (GHC.unLoc returnFb))
+  logTr $ "moveReturn:moving (returnFb,pureFb):" ++ showGhc (returnFb,pureFb)
+  let parsed2 = replaceMatchGroup parsed pureFb (GHC.fun_matches (GHC.unLoc returnFb))
   grhs <- liftT grhsPure
-  replaceGrHs returnFb grhs
-  return ()
+  return $ replaceGrHs parsed2 returnFb grhs
 
 -- ---------------------------------------------------------------------
 
@@ -110,13 +119,12 @@ findFunBind rdr t = SYB.something (Nothing `SYB.mkQ` bind) t
 
 -- ---------------------------------------------------------------------
 
-replaceMatchGroup :: GHC.LHsBind GHC.RdrName
+replaceMatchGroup :: GHC.ParsedSource
+                  -> GHC.LHsBind GHC.RdrName
                   -> GHC.MatchGroup GHC.RdrName (GHC.LHsExpr GHC.RdrName)
-                  -> RefactGhc ()
-replaceMatchGroup (GHC.L l fb) mg = do
-  parsed <- getRefactParsed
-  let parsed' = SYB.everywhere (SYB.mkT doReplace) parsed
-  putRefactParsed parsed' emptyAnns
+                  -> GHC.ParsedSource
+replaceMatchGroup parsed (GHC.L l fb) mg = do
+  SYB.everywhere (SYB.mkT doReplace) parsed
   where
     doReplace (GHC.L lf _fb1)
       | lf == l = (GHC.L lf (fb { GHC.fun_matches = mg}))
@@ -124,13 +132,12 @@ replaceMatchGroup (GHC.L l fb) mg = do
 
 -- ---------------------------------------------------------------------
 
-replaceGrHs :: GHC.LHsBind GHC.RdrName
+replaceGrHs :: GHC.ParsedSource
+            -> GHC.LHsBind GHC.RdrName
             -> (GHC.GRHSs GHC.RdrName (GHC.LHsExpr GHC.RdrName))
-            -> RefactGhc ()
-replaceGrHs (GHC.L l _fb) grhs = do
-  parsed <- getRefactParsed
-  let parsed' = SYB.everywhere (SYB.mkT doReplace) parsed
-  putRefactParsed parsed' emptyAnns
+            -> GHC.ParsedSource
+replaceGrHs parsed (GHC.L l _fb) grhs = do
+  SYB.everywhere (SYB.mkT doReplace) parsed
   where
     doReplace :: GHC.LHsBind GHC.RdrName -> GHC.LHsBind GHC.RdrName
     doReplace (GHC.L lf fb1)
@@ -186,3 +193,11 @@ grhsPure = do
    (PlaceHolder)
    (FromSource))
 -}
+
+-- ---------------------------------------------------------------------
+
+-- |Make a simple unqualified 'GHC.RdrName'
+mkRdrName :: String -> GHC.RdrName
+mkRdrName s = GHC.mkVarUnqual (GHC.mkFastString s)
+
+-- ---------------------------------------------------------------------
