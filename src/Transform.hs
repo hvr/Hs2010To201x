@@ -38,16 +38,19 @@ comp fileName = do
     Left (ss,errStr) -> error $ "parse failed for " ++ fileName ++ ":" ++ errStr
     Right (anns,parsed) -> do
       -- putStrLn $ "parsed=" ++ SYB.showData SYB.Parser 0 parsed
-      (appAnns,applicativeTemplate) <- applicativeInstance
-      let (lp',(ans',_),_w) = runTransform (mergeAnns anns appAnns) (process parsed applicativeTemplate)
+      (appAnns,applicativeTemplate) <- applicativeInstanceTemplate
+      (funAnns,functorTemplate)     <- functorInstanceTemplate
+      let anns' = mergeAnnList [anns, appAnns, funAnns]
+      let (lp',(ans',_),_w) = runTransform anns' (process parsed applicativeTemplate functorTemplate)
       putStrLn $ "log:\n" ++ intercalate "\n" _w
       writeResults lp' ans' fileName
       return [fileName]
 
 -- ---------------------------------------------------------------------
 
-process :: GHC.ParsedSource -> GHC.LHsDecl GHC.RdrName -> Transform GHC.ParsedSource
-process parsed appTemplate = do
+process :: GHC.ParsedSource -> GHC.LHsDecl GHC.RdrName -> GHC.LHsDecl GHC.RdrName
+        -> Transform GHC.ParsedSource
+process parsed appTemplate funTemplate = do
   foldM processOne parsed monads
   where
     insts = getOneParamInstances parsed
@@ -60,22 +63,27 @@ process parsed appTemplate = do
     processOne :: GHC.ParsedSource -> ((GHC.RdrName, GHC.LHsType GHC.RdrName), GHC.ClsInstDecl GHC.RdrName)
                -> Transform GHC.ParsedSource
     processOne parsed ((s,p),i) = do
-      p2 <- addFunctorIfNeeded parsed functors ((s,p),i)
-      (p3,a) <- addApplicativeIfNeeded p2 appTemplate applicatives ((s,p),i)
+      (p2,a) <- addApplicativeIfNeeded parsed appTemplate applicatives ((s,p),i)
+      p3 <- addFunctorIfNeeded p2 funTemplate functors ((s,p),i)
       -- logDataWithAnnsTr "after adding applicative:" p3
       p4 <- moveReturn p3 i a
       return p4
 
 -- ---------------------------------------------------------------------
 
-addFunctorIfNeeded :: (GHC.Outputable b,GHC.Outputable c)
-                   => GHC.ParsedSource -> Map.Map String a -> ((b,c),d) -> Transform GHC.ParsedSource
-addFunctorIfNeeded parsed functors ((s,p),i) = do
+addFunctorIfNeeded :: GHC.ParsedSource
+                   -> GHC.LHsDecl GHC.RdrName
+                   -> Map.Map String a
+                   -> ((GHC.RdrName,GHC.LHsType GHC.RdrName),d)
+                   -> Transform GHC.ParsedSource
+addFunctorIfNeeded parsed funTemplate functors ((s,p),i) = do
   case Map.lookup (showGhc p) functors of
     Nothing -> do
-      -- error $ "Need to create a Functor instance for:" ++ showGhc (s, p)
-      logTr $ "Need to create a Functor instance for:" ++ showGhc (s, p)
-      return parsed
+      funTemplate' <- replaceRdrName placeholderRdrName p funTemplate
+      decls <- hsDecls parsed
+      parsed' <- replaceDecls parsed (funTemplate':decls)
+      logTr $ "addFunctorIfNeeded:added"
+      return parsed'
     Just _ -> return parsed
 
 -- ---------------------------------------------------------------------
@@ -98,17 +106,33 @@ addApplicativeIfNeeded parsed appTemplate applicatives ((s,p),i) = do
       return (parsed', instDecl )
     Just (_,a) -> return (parsed,a)
 
-applicativeInstance :: IO (Anns,GHC.LHsDecl GHC.RdrName)
-applicativeInstance = do
-  Right (declAnns, newDecl) <- withDynFlags (\df -> parseDecl df  "ap" applicativeStr)
+-- ---------------------------------------------------------------------
+
+applicativeInstanceTemplate :: IO (Anns,GHC.LHsDecl GHC.RdrName)
+applicativeInstanceTemplate = parseDeclAnns "ap" applicativeStr
+  where
+    applicativeStr :: String
+    applicativeStr =
+      "instance Applicative PLACEHOLDER where\n\
+      \  pure = undefined\n\
+      \  f1 <*> f2   = f1 >>= \\v1 -> f2 >>= (pure . v1)\n"
+
+-- ---------------------------------------------------------------------
+
+functorInstanceTemplate :: IO (Anns,GHC.LHsDecl GHC.RdrName)
+functorInstanceTemplate = parseDeclAnns "fn" functorStr
+  where
+    functorStr :: String
+    functorStr =
+      "instance Functor PLACEHOLDER where\n\
+      \  fmap f m    = m >>= pure . f\n"
+
+-- ---------------------------------------------------------------------
+
+parseDeclAnns tag str = do
+  Right (declAnns, newDecl) <- withDynFlags (\df -> parseDecl df  tag str)
   let declAnns' = setPrecedingLines newDecl 2 0 declAnns
   return (declAnns',newDecl)
-
-applicativeStr :: String
-applicativeStr =
-  "instance Applicative PLACEHOLDER where\n\
-  \  pure = undefined\n\
-  \  f1 <*> f2   = f1 >>= \\v1 -> f2 >>= (pure . v1)\n"
 
 -- ---------------------------------------------------------------------
 
@@ -184,13 +208,7 @@ replaceRdrName old new t = SYB.everywhereM (SYB.mkM doReplaceTyVar) t
           -- logTr $ "doReplaceTyVar: returning " ++ showGhc (GHC.L l new)
           return (GHC.L l (GHC.unLoc new))
     doReplaceTyVar x = return x
-{-
-replaceRdrName.doReplaceTyVar:miss on:
-({ ap:1:22-31 }
- Just (Ann (DP (0,1)) [] [] [((G AnnVal),DP (0,0))] Nothing Nothing)
- (HsTyVar
-  (Unqual {OccName: PLACHOLDER})))
--}
+
 -- ---------------------------------------------------------------------
 
 replaceMatchGroup :: GHC.ParsedSource
