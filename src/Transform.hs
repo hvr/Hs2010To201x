@@ -1,14 +1,16 @@
 {-# LANGUAGE StandaloneDeriving #-}
 module Transform (mrp) where
 
+import qualified GHC.SYB.Utils as SYB
 import qualified Data.Generics         as SYB
 
 import qualified FastString    as GHC
 import qualified GHC           as GHC
+import qualified Outputable    as GHC
 import qualified RdrName       as GHC
 
 import Language.Haskell.GHC.ExactPrint
--- import Language.Haskell.GHC.ExactPrint.Parsers
+import Language.Haskell.GHC.ExactPrint.Parsers
 import Language.Haskell.GHC.ExactPrint.Types
 import Language.Haskell.GHC.ExactPrint.Utils
 
@@ -35,30 +37,78 @@ comp fileName = do
   case pr of
     Left (ss,errStr) -> error $ "parse failed for " ++ fileName ++ ":" ++ errStr
     Right (anns,parsed) -> do
-      let insts = getOneParamInstances parsed
-      putStrLn $ "Transform.com:instances:" ++ showGhc insts
-      let
-        isInstance name ((s,_),_) = showGhc s == name
-        byParamMap is = Map.fromList $ map (\v@((_,k),_) -> (showGhc k,v)) is
-        applicatives = byParamMap $ filter (isInstance "Applicative") insts
-        monads       = filter (isInstance "Monad") insts
-      -- logm $ "Transform.com:Applicative instances:" ++ showGhc applicatives
-      -- logm $ "Transform.com:Monad instances:" ++ showGhc monads
-
-      void $ forM monads $ \((s,p),i) -> do
-        case Map.lookup (showGhc p) applicatives of
-          Nothing -> do
-            error $ "Need to create an Applicative instance for:" ++ showGhc (s, p)
-          Just (_,a) -> do
-            putStrLn $ "Found matching applicative:" ++ showGhc a
-            -- moveReturn i a
-            let (lp',(ans',_),_w) = runTransform anns (moveReturn parsed i a)
-            putStrLn $ "log:\n" ++ intercalate "\n" _w
-            writeResults lp' ans' fileName
-            return ()
-        return []
-
+      -- putStrLn $ "parsed=" ++ SYB.showData SYB.Parser 0 parsed
+      (appAnns,applicativeTemplate) <- applicativeInstance
+      let (lp',(ans',_),_w) = runTransform (mergeAnns anns appAnns) (process parsed applicativeTemplate)
+      putStrLn $ "log:\n" ++ intercalate "\n" _w
+      writeResults lp' ans' fileName
       return [fileName]
+
+-- ---------------------------------------------------------------------
+
+process :: GHC.ParsedSource -> GHC.LHsDecl GHC.RdrName -> Transform GHC.ParsedSource
+process parsed appTemplate = do
+  foldM processOne parsed monads
+  where
+    insts = getOneParamInstances parsed
+    isInstance name ((s,_),_) = showGhc s == name
+    byParamMap is = Map.fromList $ map (\v@((_,k),_) -> (showGhc k,v)) is
+    applicatives = byParamMap $ filter (isInstance "Applicative") insts
+    functors     = byParamMap $ filter (isInstance "Functor")     insts
+    monads       = filter (isInstance "Monad") insts
+
+    processOne :: GHC.ParsedSource -> ((GHC.RdrName, GHC.LHsType GHC.RdrName), GHC.ClsInstDecl GHC.RdrName)
+               -> Transform GHC.ParsedSource
+    processOne parsed ((s,p),i) = do
+      p2 <- addFunctorIfNeeded parsed functors ((s,p),i)
+      (p3,a) <- addApplicativeIfNeeded p2 appTemplate applicatives ((s,p),i)
+      -- logDataWithAnnsTr "after adding applicative:" p3
+      p4 <- moveReturn p3 i a
+      return p4
+
+-- ---------------------------------------------------------------------
+
+addFunctorIfNeeded :: (GHC.Outputable b,GHC.Outputable c)
+                   => GHC.ParsedSource -> Map.Map String a -> ((b,c),d) -> Transform GHC.ParsedSource
+addFunctorIfNeeded parsed functors ((s,p),i) = do
+  case Map.lookup (showGhc p) functors of
+    Nothing -> do
+      -- error $ "Need to create a Functor instance for:" ++ showGhc (s, p)
+      logTr $ "Need to create a Functor instance for:" ++ showGhc (s, p)
+      return parsed
+    Just _ -> return parsed
+
+-- ---------------------------------------------------------------------
+
+addApplicativeIfNeeded :: GHC.ParsedSource
+                       -> GHC.LHsDecl GHC.RdrName
+                       -> Map.Map String ((GHC.RdrName, GHC.LHsType GHC.RdrName), GHC.ClsInstDecl GHC.RdrName)
+                       -> ((GHC.RdrName,GHC.LHsType GHC.RdrName),d)
+                       -> Transform (GHC.ParsedSource,GHC.ClsInstDecl GHC.RdrName)
+addApplicativeIfNeeded parsed appTemplate applicatives ((s,p),i) = do
+  case Map.lookup (showGhc p) applicatives of
+    Nothing -> do
+      appTemplate' <- replaceRdrName placeholderRdrName p appTemplate
+      -- logDataWithAnnsTr "appTemplate'" appTemplate'
+      logTr $ "appTemplate'=" ++ showGhc appTemplate'
+      decls <- hsDecls parsed
+      parsed' <- replaceDecls parsed (appTemplate':decls)
+      let (GHC.L _ (GHC.InstD (GHC.ClsInstD instDecl))) = appTemplate
+      logTr $ "addApplicativeIfNeeded:added"
+      return (parsed', instDecl )
+    Just (_,a) -> return (parsed,a)
+
+applicativeInstance :: IO (Anns,GHC.LHsDecl GHC.RdrName)
+applicativeInstance = do
+  Right (declAnns, newDecl) <- withDynFlags (\df -> parseDecl df  "ap" applicativeStr)
+  let declAnns' = setPrecedingLines newDecl 2 0 declAnns
+  return (declAnns',newDecl)
+
+applicativeStr :: String
+applicativeStr =
+  "instance Applicative PLACEHOLDER where\n\
+  \  pure = undefined\n\
+  \  f1 <*> f2   = f1 >>= \\v1 -> f2 >>= (pure . v1)\n"
 
 -- ---------------------------------------------------------------------
 
@@ -67,10 +117,12 @@ writeResults parsed ann fileName = do
   let source = exactPrint parsed ann
   let (baseFileName,ext) = splitExtension fileName
   writeFile (baseFileName ++ ".refactored" ++ ext) source
+  writeFile (fileName ++ ".AST_out") (showAnnData ann 0 parsed)
 
 -- ---------------------------------------------------------------------
 
-getOneParamInstances :: GHC.ParsedSource -> [((GHC.RdrName, GHC.LHsType GHC.RdrName),GHC.ClsInstDecl GHC.RdrName)]
+getOneParamInstances :: GHC.ParsedSource
+                     -> [((GHC.RdrName, GHC.LHsType GHC.RdrName),GHC.ClsInstDecl GHC.RdrName)]
 getOneParamInstances parsed =
   SYB.everything (++) ([] `SYB.mkQ` cls) parsed
   where
@@ -84,6 +136,9 @@ getOneParamInstances parsed =
     getInstanceTypes _ = Nothing
 
 -- ---------------------------------------------------------------------
+
+placeholderRdrName :: GHC.RdrName
+placeholderRdrName = mkRdrName "PLACEHOLDER"
 
 returnRdrName :: GHC.RdrName
 returnRdrName = mkRdrName "return"
@@ -119,6 +174,25 @@ findFunBind rdr t = SYB.something (Nothing `SYB.mkQ` bind) t
 
 -- ---------------------------------------------------------------------
 
+replaceRdrName :: (SYB.Typeable t,SYB.Data t)
+               => GHC.RdrName -> GHC.LHsType GHC.RdrName -> t -> Transform t
+replaceRdrName old new t = SYB.everywhereM (SYB.mkM doReplaceTyVar) t
+  where
+    doReplaceTyVar :: GHC.LHsType GHC.RdrName -> Transform (GHC.LHsType GHC.RdrName)
+    doReplaceTyVar (GHC.L l (GHC.HsTyVar rn))
+      | showGhc rn == showGhc old = do
+          -- logTr $ "doReplaceTyVar: returning " ++ showGhc (GHC.L l new)
+          return (GHC.L l (GHC.unLoc new))
+    doReplaceTyVar x = return x
+{-
+replaceRdrName.doReplaceTyVar:miss on:
+({ ap:1:22-31 }
+ Just (Ann (DP (0,1)) [] [] [((G AnnVal),DP (0,0))] Nothing Nothing)
+ (HsTyVar
+  (Unqual {OccName: PLACHOLDER})))
+-}
+-- ---------------------------------------------------------------------
+
 replaceMatchGroup :: GHC.ParsedSource
                   -> GHC.LHsBind GHC.RdrName
                   -> GHC.MatchGroup GHC.RdrName (GHC.LHsExpr GHC.RdrName)
@@ -127,7 +201,18 @@ replaceMatchGroup parsed (GHC.L l fb) mg = do
   SYB.everywhere (SYB.mkT doReplace) parsed
   where
     doReplace (GHC.L lf _fb1)
-      | lf == l = (GHC.L lf (fb { GHC.fun_matches = mg}))
+      | lf == l = (GHC.L lf (fb { GHC.fun_matches = replaceReturnWithPure mg}))
+    doReplace x = x
+
+-- ---------------------------------------------------------------------
+
+replaceReturnWithPure :: (SYB.Typeable t,SYB.Data t) => t -> t
+replaceReturnWithPure t = SYB.everywhere (SYB.mkT doReplace) t
+  where
+    doReplace :: GHC.Match GHC.RdrName (GHC.LHsExpr GHC.RdrName)
+              -> GHC.Match GHC.RdrName (GHC.LHsExpr GHC.RdrName)
+    doReplace (GHC.Match (Just (GHC.L l rn,ii)) pats typ rhs)
+      | rn == returnRdrName = (GHC.Match (Just (GHC.L l pureRdrName,ii)) pats typ rhs)
     doReplace x = x
 
 -- ---------------------------------------------------------------------
@@ -200,4 +285,28 @@ grhsPure = do
 mkRdrName :: String -> GHC.RdrName
 mkRdrName s = GHC.mkVarUnqual (GHC.mkFastString s)
 
+-- ---------------------------------------------------------------------
+
+-- |The annotations are keyed to the constructor, so if we replace a qualified
+-- with an unqualified RdrName or vice versa we have to rebuild the key for the
+-- appropriate annotation.
+replaceAnnKey :: (SYB.Data old,SYB.Data new)
+  => GHC.Located old -> GHC.Located new -> Anns -> Anns
+replaceAnnKey old new ans =
+  case Map.lookup (mkAnnKey old) ans of
+    Nothing -> ans
+    Just v ->  anns'
+      where
+        anns1 = Map.delete (mkAnnKey old) ans
+        anns' = Map.insert (mkAnnKey new) v anns1
+{-
+
+    doReplaceRdr :: GHC.Located GHC.RdrName -> Transform (GHC.Located GHC.RdrName)
+    doReplaceRdr oldName@(GHC.L l rn)
+      | rn == old = do
+        let newName = (GHC.L l new)
+        modifyAnnsT (replaceAnnKey oldName newName)
+        return newName
+    doReplaceRdr x = return x
+-}
 -- ---------------------------------------------------------------------
