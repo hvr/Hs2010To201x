@@ -32,6 +32,19 @@ spec = do
                            "./testcases/H2010/Maybe1.refactored.hs"
      diffM `shouldBe` []
 
+    -- ---------------------------------
+
+    it "mrp in Maybe3 multi-param" $ do
+     r <- ct $ mrp "./Maybe3.hs"
+
+     r' <- ct $ mapM makeRelativeToCurrentDirectory r
+
+     r' `shouldBe` [ "./Maybe3.hs"
+                   ]
+
+     diffM <- compareFiles "./testcases/H2010/Maybe3.expected.hs"
+                           "./testcases/H2010/Maybe3.refactored.hs"
+     diffM `shouldBe` []
 
 -- ---------------------------------------------------------------------
 

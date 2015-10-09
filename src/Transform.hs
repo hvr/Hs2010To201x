@@ -80,6 +80,8 @@ addFunctorIfNeeded parsed funTemplate functors ((s,p),i) = do
   case Map.lookup (showGhc p) functors of
     Nothing -> do
       funTemplate' <- replaceRdrName placeholderRdrName p funTemplate
+      logDataWithAnnsTr "funTemplate'" funTemplate'
+      logDataWithAnnsTr "p" p
       decls <- hsDecls parsed
       parsed' <- replaceDecls parsed (funTemplate':decls)
       logTr $ "addFunctorIfNeeded:added"
@@ -206,7 +208,7 @@ replaceRdrName old new t = SYB.everywhereM (SYB.mkM doReplaceTyVar) t
     doReplaceTyVar (GHC.L l (GHC.HsTyVar rn))
       | showGhc rn == showGhc old = do
           -- logTr $ "doReplaceTyVar: returning " ++ showGhc (GHC.L l new)
-          return (GHC.L l (GHC.unLoc new))
+          return new
     doReplaceTyVar x = return x
 
 -- ---------------------------------------------------------------------
@@ -327,4 +329,15 @@ replaceAnnKey old new ans =
         return newName
     doReplaceRdr x = return x
 -}
+-- ---------------------------------------------------------------------
+
+copyAnn :: (SYB.Data old,SYB.Data new)
+  => GHC.Located old -> GHC.Located new -> Anns -> Anns
+copyAnn old new ans =
+  case Map.lookup (mkAnnKey old) ans of
+    Nothing -> ans
+    Just v ->  anns'
+      where
+        anns' = Map.insert (mkAnnKey new) v ans
+
 -- ---------------------------------------------------------------------

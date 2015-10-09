@@ -4,3 +4,5 @@ dist
 /testcases/H2010/Maybe1.hs.AST_out
 /testcases/H2010/Maybe1.hs.parsed_out
 /testcases/H2010/Maybe1.refactored.hs
+/testcases/H2010/Maybe3.hs.AST_out
+/testcases/H2010/Maybe3.refactored.hs
