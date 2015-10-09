@@ -1,3 +1,6 @@
 dist
 /TAGS
 /tags
+/testcases/H2010/Maybe1.hs.AST_out
+/testcases/H2010/Maybe1.hs.parsed_out
+/testcases/H2010/Maybe1.refactored.hs

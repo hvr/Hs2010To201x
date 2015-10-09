@@ -2,32 +2,15 @@ module TransformSpec (main, spec) where
 
 import Transform
 
-import qualified FastString    as GHC
 import qualified GHC           as GHC
-import qualified Name          as GHC
 -- import qualified Outputable    as GHC
-import qualified Unique        as GHC
 
 import Data.Algorithm.Diff
-import Data.Data
-import Exception
-import Language.Haskell.GHC.ExactPrint
-import Language.Haskell.GHC.ExactPrint.Annotate
-import Language.Haskell.GHC.ExactPrint.Parsers
-import Language.Haskell.GHC.ExactPrint.Types
-import Language.Haskell.GHC.ExactPrint.Utils
 import qualified Language.Haskell.GhcMod as GM
 import qualified Language.Haskell.GhcMod.Types as GM
 import Language.Haskell.Refact.Utils.Monad
-import Language.Haskell.Refact.Utils.MonadFunctions
-import Language.Haskell.Refact.Utils.Types
-import Language.Haskell.Refact.Utils.Utils
-import Numeric
 import System.Directory
-import System.Log.Handler.Simple
-import System.Log.Logger
 
-import qualified Data.Map as Map
 
 import           Test.Hspec
 
@@ -41,21 +24,22 @@ spec :: Spec
 spec = do
   describe "Test MRP" $ do
     it "mrp in Maybe1" $ do
-     -- r <- ct $ mrp defaultTestSettings testOptions "./Maybe1.hs"  (7,1) (7,1)
-     r <- ct $ mrp logTestSettings testOptions "./Maybe1.hs"  (7,1) (7,1)
+     -- r <- ct $ mrp defaultTestSettings testOptions "./Maybe1.hs"
+     r <- ct $ mrp logTestSettings testOptions "./Maybe1.hs"
 
      r' <- ct $ mapM makeRelativeToCurrentDirectory r
 
      r' `shouldBe` [ "Maybe1.hs"
                    ]
 
-     diffM <- ct $ compareFiles "./Maybe1.hs.expected"
-                                "./Maybe1.refactored.hs"
+     diffM <- compareFiles "./testcases/H2010/Maybe1.expected.hs"
+                           "./testcases/H2010/Maybe1.refactored.hs"
      diffM `shouldBe` []
 
 
 -- ---------------------------------------------------------------------
 
+ct :: IO a -> IO a
 ct = cdAndDo "testcases/H2010"
 
 cdAndDo :: FilePath -> IO a -> IO a

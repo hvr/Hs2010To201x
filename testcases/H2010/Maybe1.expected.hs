@@ -10,7 +10,7 @@ instance  Functor Maybe'  where
     -- fmap f (Just' a)      = Just' (f a)
 
 instance Applicative Maybe' where
-    pure = undefined
+    return = Just'
 
     Just' f  <*> m       = fmap f m
     Nothing' <*> _m      = Nothing'
@@ -20,7 +20,7 @@ instance Applicative Maybe' where
 
 
 instance Monad Maybe' where
-    return = Just'
+    return = pure
 
     Nothing' >>= _ = Nothing'
     Just' x  >>= f = f x

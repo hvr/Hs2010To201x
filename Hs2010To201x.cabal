@@ -34,22 +34,26 @@ test-suite spec
       Spec.hs
   Hs-Source-Dirs:
    src
+   test
   other-modules:
       TransformSpec
   build-depends:
       -- GHC 7.10.2 ships with base 4.8.1.0
       base        >= 4.8.1.0  && < 4.9
+    , containers
     , Diff >= 0.3.0
     , HUnit
+    , HaRe >= 0.8
     , directory
     , filepath
     , ghc
+    , ghc-exactprint >= 0.4.1
+    , ghc-mod >= 5.4.0.0
     , ghc-paths
     , ghc-prim
     , ghc-syb-utils
     , hspec
-    , ghc-exactprint >= 0.4.1
-    , HaRe >= 0.8
+    , syb
   default-language:    Haskell2010
   if impl (ghc < 7.10.2)
     buildable: False
