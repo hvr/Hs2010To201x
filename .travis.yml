@@ -41,6 +41,8 @@ install:
  - echo "$(ghc --version) [$(ghc --print-project-git-commit-id 2> /dev/null || echo '?')]"
  - travis_retry cabal update
  - pwd
+ # Compiling HaRe with optimisation results in OOM error on travis
+ - cabal install --disable-optimisation HaRe
  - cabal install --dependencies-only --enable-tests
 
 # Here starts the actual work to be performed for the package under
