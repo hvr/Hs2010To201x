@@ -53,12 +53,10 @@ script:
  # GHC 7.10.2 times out on compilation if optimisation is not disabled
  - cabal configure --disable-optimization --enable-tests --enable-benchmarks -v2  # -v2 provides useful information for debugging
  - cabal build   # this builds all libraries and executables (including tests/benchmarks)
- - cabal haddock
+ # - cabal haddock
  - cabal test --show-details=streaming
  - cabal check
  - cabal sdist   # tests that a source-distribution can be generated
- - emacs --version
- - emacs -Q --batch -L elisp -l elisp/tests/hare-tests.el -f ert-run-tests-batch-and-exit
 
 # The following scriptlet checks that the resulting source distribution can be built & installed
  # - export SRC_TGZ=$(cabal info . | awk '{print $2 ".tar.gz";exit}') ;
