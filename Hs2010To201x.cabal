@@ -1,7 +1,7 @@
 name:                Hs2010To201x
 version:             0.1.0.0
 synopsis:            Automatically update a project from haskell2010 to haskell201x
--- description:         
+description:         Automatically update a project from haskell2010 to haskell201x
 homepage:            https://github.com/hvr/Hs2010To201x
 license:             BSD3
 license-file:        LICENSE
