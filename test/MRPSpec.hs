@@ -7,6 +7,7 @@ import qualified GHC           as GHC
 
 import Data.Algorithm.Diff
 import System.Directory
+import Control.Logging
 
 
 import           Test.Hspec
@@ -55,7 +56,7 @@ cdAndDo :: FilePath -> IO a -> IO a
 cdAndDo path fn = do
   old <- getCurrentDirectory
   r <- GHC.gbracket (setCurrentDirectory path) (\_ -> setCurrentDirectory old)
-          $ \_ -> fn
+          $ \_ -> withStdoutLogging fn
   return r
 -- ---------------------------------------------------------------------
 
