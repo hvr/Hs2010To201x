@@ -14,6 +14,8 @@ import Language.Haskell.GHC.ExactPrint.Parsers
 import Language.Haskell.GHC.ExactPrint.Types
 import Language.Haskell.GHC.ExactPrint.Utils
 
+import qualified Control.Logging as L
+import qualified Data.Text as T
 import Control.Monad
 import Data.List
 import Data.Maybe
@@ -42,7 +44,7 @@ comp fileName = do
       (funAnns,functorTemplate)     <- functorInstanceTemplate
       let anns' = mergeAnnList [anns, appAnns, funAnns]
       let (lp',(ans',_),_w) = runTransform anns' (process parsed applicativeTemplate functorTemplate)
-      putStrLn $ "log:\n" ++ intercalate "\n" _w
+      L.debug $ T.pack $ "log:\n" ++ intercalate "\n" _w
       writeResults lp' ans' fileName
       return [fileName]
 
