@@ -35,7 +35,7 @@ test-suite spec
    src
    test
   other-modules:
-      TransformSpec
+      MRPSpec
   build-depends:
       -- GHC 7.10.2 ships with base 4.8.1.0
       base        >= 4.8.1.0  && < 4.9

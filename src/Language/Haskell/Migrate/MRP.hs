@@ -1,5 +1,5 @@
 {-# LANGUAGE StandaloneDeriving #-}
-module Transform (mrp) where
+module Language.Haskell.Migrate.MRP (mrp) where
 
 import qualified GHC.SYB.Utils as SYB
 import qualified Data.Generics         as SYB

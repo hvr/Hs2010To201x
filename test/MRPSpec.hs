@@ -1,6 +1,6 @@
-module TransformSpec (main, spec) where
+module MRPSpec (main, spec) where
 
-import Transform
+import Language.Haskell.Migrate.MRP
 
 import qualified GHC           as GHC
 -- import qualified Outputable    as GHC
