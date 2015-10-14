@@ -5,12 +5,12 @@ Automatic H2010 to H201x Refactoring
 [![License BSD3][badge-license]][license]
 [![Build Status][badge-travis]][travis]
 
-[badge-travis]: https://travis-ci.org/alanz/Hs2010To201X.png?branch=master
-[travis]: https://travis-ci.org/alanz/Hs2010To201X
-[badge-hackage]: https://img.shields.io/hackage/v/Hs2010To201X.svg?dummy
-[hackage]: https://hackage.haskell.org/package/Hs2010To201X
+[badge-travis]: https://travis-ci.org/alanz/Hs2010To201x.png?branch=master
+[travis]: https://travis-ci.org/alanz/Hs2010To201x
+[badge-hackage]: https://img.shields.io/hackage/v/Hs2010To201x.svg?dummy
+[hackage]: https://hackage.haskell.org/package/Hs2010To201x
 [badge-license]: https://img.shields.io/badge/license-BSD3-green.svg?dummy
-[license]: https://github.com/alanz/Hs2010To201X/blob/master/LICENSE
+[license]: https://github.com/alanz/Hs2010To201x/blob/master/LICENSE
 
 Typeclass Refactoring
 ---------------------

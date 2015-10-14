@@ -1,8 +1,13 @@
 {-# LANGUAGE StandaloneDeriving #-}
-module Language.Haskell.Migrate.MRP (mrp) where
+module Language.Haskell.Migrate.MRP
+  (
+    mrp
+  , Opts(..)
+  , OutputOpt(..)
+  ) where
 
 import qualified GHC.SYB.Utils as SYB
-import qualified Data.Generics         as SYB
+import qualified Data.Generics as SYB
 
 import qualified FastString    as GHC
 import qualified GHC           as GHC
@@ -14,27 +19,35 @@ import Language.Haskell.GHC.ExactPrint.Parsers
 import Language.Haskell.GHC.ExactPrint.Types
 import Language.Haskell.GHC.ExactPrint.Utils
 
-import qualified Control.Logging as L
-import qualified Data.Text as T
 import Control.Monad
 import Data.List
 import Data.Maybe
 import System.Directory
 import System.FilePath.Posix
-
+import System.IO
+import qualified Control.Logging as L
 import qualified Data.Map as Map
+import qualified Data.Text as T
+
 -- import Debug.Trace
 -- import Control.Exception
 
 -- ---------------------------------------------------------------------
 
-mrp :: FilePath ->IO [FilePath]
-mrp fileName = do
-  absFileName <- canonicalizePath fileName
-  comp fileName
+data Opts = Opts
+  { files   :: [FilePath]
+  , output  :: OutputOpt
+  , debugOn :: Bool
+  } deriving (Show)
 
-comp :: FilePath -> IO [FilePath]
-comp fileName = do
+data OutputOpt = Stdout | InplaceNoBackup | InplaceBackup String
+               | PreSuffix String -- e.g. A.hs with 'PreSuffix' "ref" becomes A.ref.hs
+               deriving Show
+
+-- ---------------------------------------------------------------------
+
+mrp :: Opts -> FilePath ->IO ()
+mrp opt fileName = do
   pr <- parseModule fileName
   case pr of
     Left (ss,errStr) -> error $ "parse failed for " ++ fileName ++ ":" ++ errStr
@@ -45,8 +58,7 @@ comp fileName = do
       let anns' = mergeAnnList [anns, appAnns, funAnns]
       let (lp',(ans',_),_w) = runTransform anns' (process parsed applicativeTemplate functorTemplate)
       L.debug $ T.pack $ "log:\n" ++ intercalate "\n" _w
-      writeResults lp' ans' fileName
-      return [fileName]
+      writeResults opt lp' ans' fileName
 
 -- ---------------------------------------------------------------------
 
@@ -140,12 +152,28 @@ parseDeclAnns tag str = do
 
 -- ---------------------------------------------------------------------
 
-writeResults :: GHC.ParsedSource -> Anns -> FilePath -> IO ()
-writeResults parsed ann fileName = do
+writeResults :: Opts -> GHC.ParsedSource -> Anns -> FilePath -> IO ()
+writeResults opt parsed ann fileName = do
   let source = exactPrint parsed ann
   let (baseFileName,ext) = splitExtension fileName
-  writeFile (baseFileName ++ ".refactored" ++ ext) source
-  writeFile (fileName ++ ".AST_out") (showAnnData ann 0 parsed)
+  makeBackup (output opt) fileName
+  -- writeFile (baseFileName ++ ".refactored" ++ ext) source
+  case (output opt) of
+    Stdout -> hPutStr stdout source
+    PreSuffix s -> writeFile (baseFileName <.> s ++ ext) source
+    _      -> writeFile fileName source
+  -- writeFile (baseFileName ++ ".refactored" ++ ext) source
+  when (debugOn opt) $ do
+    writeFile (fileName ++ ".AST_out") (showAnnData ann 0 parsed)
+
+-- ---------------------------------------------------------------------
+
+makeBackup o f =
+  case o of
+    (InplaceBackup suffix) -> do
+      renameFile f (f <.> suffix)
+    _ -> return ()
+
 
 -- ---------------------------------------------------------------------
 

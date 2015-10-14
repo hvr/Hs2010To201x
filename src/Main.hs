@@ -5,13 +5,15 @@ import Control.Logging
 
 -- ---------------------------------------------------------------------
 
-migrate :: Opts -> IO [FilePath]
+migrate :: Opts -> IO ()
 migrate o = do
   withStdoutLogging $ do
     if debugOn o
       then setLogLevel LevelDebug
       else setLogLevel LevelError
-    mrp (file o)
+    -- putStrLn $ show o
+    return []
+    mapM_ (mrp o) (files o)
 {-
 withStdoutLogging :: (MonadBaseControl IO m, MonadIO m) => m a -> m a
 withStderrLogging :: (MonadBaseControl IO m, MonadIO m) => m a -> m a
@@ -20,22 +22,31 @@ withFileLogging :: (MonadBaseControl IO m, MonadIO m) => FilePath -> m a -> m a
 
 -- ---------------------------------------------------------------------
 
-data Opts = Opts
-  { file    :: FilePath
-  , debugOn :: Bool
-  }
-
 optsp :: Parser Opts
 optsp = Opts
-     <$> argument str (metavar "FILE")
+     <$> some (argument str (metavar "FILES..."))
+     <*> (output1' <|> output2')
      <*> switch
          ( long "debug"
         <> short 'd'
-        <> help "generate debug output" )
+        <> help "Generate debug output" )
+  where
+    output1' =
+      (\b -> if b then InplaceNoBackup else Stdout) <$>
+        switch (long "inplace"
+                <> short 'i'
+               )
+    output2' =
+      InplaceBackup <$>
+        strOption (long "inplace"
+                <> metavar "SUFFIX"
+                <> short 'i'
+                <> help "Modify files in place (makes backup if SUFFIX supplied)"
+                  )
 
 -- ---------------------------------------------------------------------
 
-main :: IO [FilePath]
+main :: IO ()
 main = execParser opts >>= migrate
   where
     opts = info (helper <*> optsp)

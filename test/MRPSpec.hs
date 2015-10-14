@@ -22,12 +22,7 @@ spec :: Spec
 spec = do
   describe "Test MRP" $ do
     it "mrp in Maybe1" $ do
-     r <- ct $ mrp "./Maybe1.hs"
-
-     r' <- ct $ mapM makeRelativeToCurrentDirectory r
-
-     r' `shouldBe` [ "./Maybe1.hs"
-                   ]
+     ct $ mrp testOpts "./Maybe1.hs"
 
      diffM <- compareFiles "./testcases/H2010/Maybe1.expected.hs"
                            "./testcases/H2010/Maybe1.refactored.hs"
@@ -36,16 +31,19 @@ spec = do
     -- ---------------------------------
 
     it "mrp in Maybe3 multi-param" $ do
-     r <- ct $ mrp "./Maybe3.hs"
-
-     r' <- ct $ mapM makeRelativeToCurrentDirectory r
-
-     r' `shouldBe` [ "./Maybe3.hs"
-                   ]
+     ct $ mrp testOpts "./Maybe3.hs"
 
      diffM <- compareFiles "./testcases/H2010/Maybe3.expected.hs"
                            "./testcases/H2010/Maybe3.refactored.hs"
      diffM `shouldBe` []
+
+-- ---------------------------------------------------------------------
+
+testOpts :: Opts
+testOpts = Opts [] (PreSuffix "refactored") False
+
+debugTestOpts :: Opts
+debugTestOpts = Opts [] (PreSuffix "refactored") True
 
 -- ---------------------------------------------------------------------
 
@@ -56,8 +54,9 @@ cdAndDo :: FilePath -> IO a -> IO a
 cdAndDo path fn = do
   old <- getCurrentDirectory
   r <- GHC.gbracket (setCurrentDirectory path) (\_ -> setCurrentDirectory old)
-          $ \_ -> withStdoutLogging fn
+          $ \_ -> withStdoutLogging (setLogLevel LevelError >> fn)
   return r
+
 -- ---------------------------------------------------------------------
 
 compareFiles :: FilePath -> FilePath -> IO [Diff [String]]
