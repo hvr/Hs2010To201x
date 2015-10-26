@@ -78,7 +78,7 @@ process parsed appTemplate funTemplate = do
                -> Transform GHC.ParsedSource
     processOne parsed ((s,p),i) = do
       (p2,a) <- addApplicativeIfNeeded parsed appTemplate applicatives ((s,p),i)
-      p3 <- addFunctorIfNeeded p2 funTemplate functors ((s,p),i)
+      p3 <- maybe (pure parsed) (\p2' -> addFunctorIfNeeded p2' funTemplate functors ((s,p),i)) p2
       -- logDataWithAnnsTr "after adding applicative:" p3
       p4 <- moveReturn p3 i a
       return p4
@@ -108,7 +108,7 @@ addApplicativeIfNeeded :: GHC.ParsedSource
                        -> GHC.LHsDecl GHC.RdrName
                        -> Map.Map String ((GHC.RdrName, GHC.LHsType GHC.RdrName), GHC.ClsInstDecl GHC.RdrName)
                        -> ((GHC.RdrName,GHC.LHsType GHC.RdrName),d)
-                       -> Transform (GHC.ParsedSource,GHC.ClsInstDecl GHC.RdrName)
+                       -> Transform (Maybe GHC.ParsedSource, GHC.ClsInstDecl GHC.RdrName)
 addApplicativeIfNeeded parsed appTemplate applicatives ((s,p),i) = do
   case Map.lookup (showGhc p) applicatives of
     Nothing -> do
@@ -119,8 +119,8 @@ addApplicativeIfNeeded parsed appTemplate applicatives ((s,p),i) = do
       parsed' <- replaceDecls parsed (appTemplate':decls)
       let (GHC.L _ (GHC.InstD (GHC.ClsInstD instDecl))) = appTemplate
       logTr $ "addApplicativeIfNeeded:added"
-      return (parsed', instDecl )
-    Just (_,a) -> return (parsed,a)
+      return (Just parsed', instDecl )
+    Just (_,a) -> return (Nothing,a)
 
 -- ---------------------------------------------------------------------
 
