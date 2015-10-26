@@ -280,7 +280,7 @@ replaceGrHs parsed (GHC.L l _fb) grhs = do
       where
         (GHC.MG (lmatch:_) tys tym o) = GHC.fun_matches fb1
         (GHC.L lm (GHC.Match mid pats ty _grhss)) = lmatch
-        match' = (GHC.L lm (GHC.Match mid pats ty grhs))
+        match' = (GHC.L lm (GHC.Match mid [] ty grhs))
         mg' = (GHC.MG [match'] tys tym o)
     doReplace x = x
 
