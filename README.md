@@ -71,7 +71,7 @@ class Monad m => MonadFail m where
 (>>) :: Functor m => m a -> m b -> m b
 (>>) = (*>)
 
-return :: Functor m => a -> m a
+return :: Applicative m => a -> m a
 return = pure
 ```
 
